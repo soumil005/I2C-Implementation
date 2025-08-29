@@ -1,153 +1,213 @@
 `timescale 1ns / 1ps
-
-module master(clk, reset, data_write, rw, target_address, scl_m, sda_m);
-    parameter IDLE = 4'b0000, START = 4'b0001, ADDR = 4'b0010, READ_ACK = 4'b0011, READ_DATA = 4'b0100, WRITE_DATA = 4'b0101, 
-    READ_ACK2 = 4'b0110, WRITE_ACK = 4'b0111, STOP = 4'b1000;
+module master(clk, scl, sda, rw, targetAddr, writeData);
     
+    input clk, rw;
+    input [6:0] targetAddr;
+    input [7:0] writeData;
     
-    input clk, reset;
-    input [7:0] data_write;
-    input rw;
-    input [6:0] target_address;
+    inout sda;
+    output scl;
     
-    inout scl_m;
-    inout sda_m;
+    reg reset;
+    reg initiate;
     
-    reg [3:0] state = IDLE;
-    reg [3:0] addr_count;
-    reg [3:0] data_count;
-    reg [7:0] address;
-    reg drive_scl = 0;
-    reg enable = 0;
-    reg [3:0] counter = 0;
+    reg enable = 1'b0;
+    reg drive_scl = 1'b0;
+    reg sda_m;
+    reg scl_m = 1'b0;
     
-    reg scl = 1;
-    reg sda;
+    assign sda = enable ? sda_m == 1'b0 ? 1'b0 : 1'bz : 1'bz;
+    assign scl = drive_scl ? scl_m == 1'b0 ? 1'b0 : 1'bz : 1'bz;
     
-    assign scl_m = (drive_scl == 1) ? scl : 1;
-    assign sda_m = (enable == 1) ? sda : 1'bz;
+    parameter IDLE = 4'd0, START = 4'd1, ADDR = 4'd2, ACK = 4'd5, READ = 4'd3, WRITE = 4'd4, WDATA = 4'd6, ACK2 = 4'd7, STOP = 4'd8, RDATA = 4'd9;
+    
+    reg [3:0] ps = IDLE;
+    reg [3:0] counter = 4'd0;
+    reg [3:0] addrCounter;
+    reg [3:0] dataCounter;
+    
+    reg [7:0] readData;
+    
+    reg start;
+    reg [1:0] count = 2'b0;
     
     always@(posedge clk) begin
-        if(counter == 9) begin
-            counter <= 0;
-            scl <= ~scl;
+        if(counter == 4'd9) begin
+            scl_m <= ~scl_m;
+            counter <= 4'd0;
         end
         else begin
             counter <= counter + 1;
         end
     end
     
-    always@(posedge scl) begin
-        if(reset == 0 && state == IDLE) begin
-            state <= START;
+    always@(posedge scl_m) begin
+        if(reset == 1'b0 && ps == IDLE) begin
+            ps <= START;
+            initiate <= 1'b1;
         end
-        else state <= IDLE;
+        else ps <= IDLE;
     end
     
-    always@(negedge scl) begin
-        if(reset) drive_scl <= 0;
-        else begin
-            if(state == IDLE || state == START || state == STOP) drive_scl <= 0;
-            else drive_scl <= 1;
-        end
-    end
-    
-    always@(negedge scl) begin            // SIGNAL CHANGES
-            case(state)
+    always@(negedge scl_m) begin
+        if(!reset && initiate) begin
+            case(ps)
                 IDLE: begin
-                    drive_scl <= 0;
-                    enable <= 0;
+                    enable <= 1'b0;
+                    drive_scl <= 1'b0;
+                    initiate <= 1'b0;
+                    reset <= 1'b1;
                 end
                 
                 START: begin
-                    enable <= 1;
-                    sda <= 0;
+                    drive_scl <= 1'b0;
+                    enable <= 1'b1;
+                    sda_m <= 1'b0;
                 end
                 
                 ADDR: begin
-                    sda <= address[addr_count - 1];
+                    if(count == 2'b01) begin
+                        enable <= 1'b1;
+                        sda_m <= targetAddr[addrCounter];
+                    end
+                    else begin
+                        count <= count + 1;
+                        start <= 1'b0;
+                    end
                 end
                 
-                READ_ACK: begin
-                    enable <= 0;
+                READ: begin
+                    enable <= 1'b1;
+                    sda_m <= 1'b1;
+                end
+
+                WRITE: begin
+                    enable <= 1'b1;
+                    sda_m <= 1'b0;
+                end         
+                
+                ACK: begin
+                    enable <= 1'b0;
+                end   
+                
+                RDATA: begin
+                    enable <= 1'b0;
                 end
                 
-                WRITE_DATA: begin
-                    enable <= 1;
-                    sda <= data_write[data_count - 1];
+                WDATA: begin
+                    enable <= 1'b1;
+                    sda_m <= writeData[dataCounter - 1];
                 end
-                
-                READ_ACK2: begin
-                    enable <= 0;
+                 
+                ACK2: begin
+                    if(rw) begin
+                        enable <= 1'b1;
+                        sda_m <= 1'b0;
+                    end
+                    else begin
+                        enable <= 1'b0;
+                    end
                 end
                 
                 STOP: begin
-                    enable <= 1;
-                    sda <= 1;
+                    enable <= 1'b1;
+                    sda_m <= 1'b1;
                 end
+                                
+                
             endcase
+        end
     end
     
-    always@(posedge scl) begin
-        case(state)
-            START: begin
-                if(reset == 0) begin
-                    addr_count <= 4'b1000;
-                    address <= {target_address, rw};
-                    state <= ADDR;
+    always@(posedge scl_m) begin
+        if(!reset && initiate) begin
+            case(ps)
+                IDLE: begin
+                
                 end
-                else state <= START;
-            end
-            ADDR: begin
-                if(reset == 0 && addr_count == 4'b0000) begin
-                    state <= READ_ACK;
+                
+                START: begin
+                    drive_scl <= 1'b1;
+                    ps <= ADDR;
+                    start <= 1'b0;
+                    count <= 1'b0;
+                    addrCounter <= 4'd6;
                 end
-                else if(reset == 0 && addr_count != 4'b0000) begin
-                    state <= ADDR;
-                    addr_count <= addr_count - 1;
-                end
-                else state <= IDLE;
-            end
-            
-            READ_ACK: begin
-                if(reset == 0) begin
-                    if(sda_m == 1'b0 && rw == 0) begin
-                        data_count <= 4'b1000;
-                        state <= WRITE_DATA;
+                
+                ADDR: begin
+                    if(count == 2'b01) begin
+                        if(addrCounter == 4'd0) begin
+                            if(rw) ps <= READ;
+                            else ps <= WRITE;
+                        end
+                        else begin
+                            ps <= ADDR;
+                            if (count == 2'b01 && !start) begin
+                                addrCounter <= 4'd6;
+                                start <= 1'b1;
+                            end
+                            else if(start) addrCounter <= addrCounter - 1;
+                        end
                     end
-                    else if(sda_m == 1'b0 && rw == 1) begin
-                        data_count <= 4'b1000;
-                        state <= READ_DATA;
+
+                end
+                
+                READ: begin
+                    ps <= ACK;
+                end
+
+                WRITE: begin
+                    ps <= ACK;
+                end            
+                
+                ACK: begin
+                    if(sda == 1'b0) begin   
+                        if(rw) ps <= RDATA;
+                        else ps <= WDATA;
+                        dataCounter <= 4'd8;
+                    end
+                    else ps <= ACK;
+                end
+                
+                WDATA: begin
+                    if(dataCounter == 4'd0) begin
+                        ps <= ACK2;
+                    end
+                    else begin
+                        dataCounter <= dataCounter - 1;
+                        ps <= WDATA;
                     end
                 end
-            end
-            
-            WRITE_DATA: begin
-                if(reset == 0 && data_count == 4'b0000) begin
-                    state <= READ_ACK2;
-                end
-                else if(reset == 0 && data_count != 4'b0000) begin
-                    state <= WRITE_DATA;
-                    data_count <= data_count - 1;
-                end
-                else state <= IDLE;
-            end
-            
-            READ_ACK2: begin
-                if(reset == 0) begin
-                    if(sda_m == 1'b0) begin
-                        state <= STOP;
+                
+                RDATA: begin
+                    if(dataCounter == 4'd0) begin
+                        ps <= ACK2;
                     end
-                    else state <= IDLE;
+                    else begin
+                        readData[ dataCounter - 1 ] <= sda;
+                        dataCounter <= dataCounter - 1;
+                        ps <= RDATA;
+                    end
                 end
-            end
-            
-            STOP: begin
-                if(reset == 0) state <= START;
-                else if(reset == 1) state <= IDLE;
-            end
-        endcase
+                 
+                ACK2: begin
+                    if(rw) ps <= STOP;
+                    else begin
+                        if(sda == 1'b0) begin
+                            ps <= STOP;
+                        end
+                        else ps <= ACK2;
+                    end
+                end
+                
+                STOP: begin
+
+                    ps <= IDLE;
+                end
+                                
+                
+            endcase
+        end
     end
-    
 
 endmodule
