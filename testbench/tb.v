@@ -3,47 +3,49 @@
 module tb;
     reg clk, reset;
     wire scl, sda;
-
+    
+    pullup(scl);
+    pullup(sda);
     // Master inputs
-    reg [7:0] data_write;
+    reg [7:0] writeData, readData;
     reg rw;
-    reg [6:0] target_address;
+    reg [6:0] targetAddr;
 
     // Master instantiation
     master uut_master(
         .clk(clk),
-        .reset(reset),
-        .data_write(data_write),
+        .writeData(writeData),
         .rw(rw),
-        .target_address(target_address),
-        .scl_m(scl),
-        .sda_m(sda)
+        .targetAddr(targetAddr),
+        .scl(scl),
+        .sda(sda)
     );
 
-    // Slave instantiation
+//     Slave instantiation
     slave uut_slave(
-        .scl_s(scl),
-        .sda_s(sda)
+        .scl(scl),
+        .sda(sda)
     );
-
+    
     // Clock generation
+    always #1 clk = ~clk;
     initial begin
         clk = 0;
-        reset = 1;
-        forever #1 clk = ~clk;
+        uut_master.reset = 1'b1;
+        uut_master.initiate = 1'b0;
+        
     end
-    
-    always @(uut_master.state) begin 
-        if (uut_master.state == 4'b1000) begin
-          $display("Stopping simulation: state reached %b at time %t", uut_master.state, $time);
-          $finish; // Stops the simulation
-        end
-    end
+
     
     initial begin
-        #10 reset = 0;
-        rw = 0; // Write
-        data_write = 8'b11001100;
-        target_address = 7'b1101111;
+        #50 ;
+
+        rw = 1'b1; // Read
+//        rw = 1'b0; // Write
+        writeData = 8'b11001100;
+        targetAddr = 7'd100;// 1100100
+        uut_master.reset = 1'b0;
+        #2000;
+        $finish;
     end
 endmodule
