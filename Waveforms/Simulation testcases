@@ -1,0 +1,9 @@
+1. I2C READ: Master reads data from slave.
+   Slave data is stored in a register named `sdata`. This data is sent over to master by slave.
+   sdata = 8'd170
+   After successful transfer of data over I2C, master's `readData` register should contain the value 8'd170.
+
+2. I2C WRITE: Master writes data to slave.
+   Write data is provided by the testbench. This data is sent over to slave by master.
+   writeData (as given in testbench) = 8'b11001100
+   After successful transfer of data over I2C, slave's `mdata` register should contain the value 8'b11001100 or 8'hcc (in hexadecimal).
