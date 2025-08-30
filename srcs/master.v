@@ -95,8 +95,13 @@ module master(clk, scl, sda, rw, targetAddr, writeData);
                 end
                 
                 WDATA: begin
-                    enable <= 1'b1;
-                    sda_m <= writeData[dataCounter - 1];
+                    if(dataCounter > 4'd0) begin
+                        enable <= 1'b1;
+                        sda_m <= writeData[dataCounter - 1];
+                    end
+                    else begin
+                        enable <= 1'b0;
+                    end
                 end
                  
                 ACK2: begin
