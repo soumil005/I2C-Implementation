@@ -129,8 +129,13 @@ module slave(scl, sda);
                 end
                 
                 WDATA: begin
-                    enable <= 1'b1;
-                    sda_s <= sdata[dataCounter - 1];
+                    if(dataCounter > 4'd0) begin
+                        enable <= 1'b1;
+                        sda_s <= sdata[dataCounter - 1];
+                    end
+                    else begin
+                        enable <= 1'b0;
+                    end
                 end
                 
                 ACK2: begin
